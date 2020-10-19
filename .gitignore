@@ -94,3 +94,6 @@ ENV/
 data/street_view
 logs/
 *.hdf5
+
+# PyCharm
+.idea/
