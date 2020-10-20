@@ -58,7 +58,7 @@ model.compile(loss=angle_error_regression,
 batch_size = 128
 nb_epoch = 50
 
-output_folder = 'models'
+output_folder = 'saved_models'
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 

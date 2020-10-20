@@ -1,6 +1,8 @@
 from __future__ import division
 
 import math
+import re
+
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,6 +11,7 @@ from keras.preprocessing.image import Iterator
 from keras.utils.np_utils import to_categorical
 import keras.backend as K
 
+REGEX_IMG = re.compile(r"(.*.)(png|jpg|jpeg|tiff)")
 
 def angle_difference(x, y):
     """
