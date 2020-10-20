@@ -2,6 +2,10 @@ from __future__ import print_function
 
 import os
 import sys
+from concurrent.futures import Future
+import concurrent.futures
+from tqdm import tqdm
+from typing import Callable, Iterable, List
 
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
 from keras.applications.resnet50 import ResNet50
@@ -16,7 +20,44 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import angle_error, RotNetDataGenerator
 import argparse
 
-voc_in_path = r"C:\Users\LDARPT\PycharmProjects\foto_extract\datasets\ClasificadorDocumentosVistas2"
+SPLIT_NAMES = ["train", "val", "test"]
+
+
+def parallelize_with_thread_pool(f: Callable, iterable: Iterable, size: int = None) -> List[Future]:
+    """
+    Parallelises de execution of the incomming function over the iterable using threadding.
+    :param f: Function to execute in parallel.
+    :param iterable: Iterable to map the function to.
+    :param size: Size of the iterable (Optional). Defaults to None
+    :return: List of Futures
+    """
+    with tqdm(total=size) as pbar:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(f, batch) for batch in iterable]
+            for _ in concurrent.futures.as_completed(futures):
+                pbar.update(1)
+    return futures
+
+
+def get_move_files_function(src, split_name):
+    # Destination folder
+    dst = os.path.join(src, split_name)
+    # If it does not create, create it.
+    if not os.path.exists(dst):
+        os.makedirs(dst)
+
+    # Helper function to move the files from src to dst
+    def move_file(file_name: str):
+        os.rename(os.path.join(src, file_name), os.path.join(dst, file_name))
+
+    # Function that will move the image file as well as its voc
+    def f(image_path: str):
+        image_file = os.path.basename(image_path)
+        voc_file = REGEX_IMG.sub(r"\1xml", image_file)
+        move_file(image_file)
+        move_file(voc_file)
+
+    return f
 
 
 def get_filenames(src):
@@ -74,12 +115,14 @@ class RotNetTrainer(object):
     def __init__(self,
                  sample_source_path,
                  model_name,
+                 splits=[0.7, 0.15, 0.15]
                  ):
         super(RotNetTrainer, self).__init__()
         self.sample_source_path = sample_source_path
+        self.create_train_split(sample_source_path, splits)
 
-        self.train_filenames = get_filenames(os.path.join(voc_in_path, "train"))
-        self.test_filenames = get_filenames(os.path.join(voc_in_path, "test"))
+        self.train_filenames = get_filenames(os.path.join(sample_source_path, "train"))
+        self.test_filenames = get_filenames(os.path.join(sample_source_path, "test"))
         print(len(self.train_filenames), 'train samples')
         print(len(self.test_filenames), 'test samples')
 
@@ -95,6 +138,26 @@ class RotNetTrainer(object):
         self.output_folder = 'saved_models'
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
+
+    def create_train_split(self, voc_in_path: str, splits=[0.7, 0.15, 0.15]):
+        assert sum(splits) == 1.0, "the sum of the splits should be 1.0"
+        for s in splits:
+            assert s > 0, "the splits % must be positive"
+        src = voc_in_path
+        # Get filenames of images
+        files = [os.path.join(r, f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
+
+        idx0 = 0
+        n_samples = len(files)
+        for i in range(len(splits)):
+            split_name = SPLIT_NAMES[i]
+            self.sample_sources[split_name] = os.path.join(src, split_name)
+            move_function = get_move_files_function(src, split_name)
+            # Select indices to move
+            idx1 = int(n_samples * splits[i]) + idx0 if (i < (len(splits) - 1)) else n_samples
+            parallelize_with_thread_pool(move_function, files[idx0:idx1], idx1 - idx0)
+            # Update left bound of indices
+            idx0 = idx1
 
     def _build(self, input_shape, nb_classes):
         # load base model
