@@ -13,6 +13,7 @@ import keras.backend as K
 
 REGEX_IMG = re.compile(r"(.*.)(png|jpg|jpeg|tiff)")
 
+
 def angle_difference(x, y):
     """
     Calculate minimum difference between two angles.
@@ -76,10 +77,10 @@ def rotate(image, angle):
 
     # Obtain the rotated coordinates of the image corners
     rotated_coords = [
-        (np.array([-image_w2,  image_h2]) * rot_mat_notranslate).A[0],
-        (np.array([ image_w2,  image_h2]) * rot_mat_notranslate).A[0],
+        (np.array([-image_w2, image_h2]) * rot_mat_notranslate).A[0],
+        (np.array([image_w2, image_h2]) * rot_mat_notranslate).A[0],
         (np.array([-image_w2, -image_h2]) * rot_mat_notranslate).A[0],
-        (np.array([ image_w2, -image_h2]) * rot_mat_notranslate).A[0]
+        (np.array([image_w2, -image_h2]) * rot_mat_notranslate).A[0]
     ]
 
     # Find the size of the new image
@@ -169,10 +170,10 @@ def crop_around_center(image, width, height):
     image_size = (image.shape[1], image.shape[0])
     image_center = (int(image_size[0] * 0.5), int(image_size[1] * 0.5))
 
-    if(width > image_size[0]):
+    if (width > image_size[0]):
         width = image_size[0]
 
-    if(height > image_size[1]):
+    if (height > image_size[1]):
         height = image_size[1]
 
     x1 = int(image_center[0] - width * 0.5)
@@ -232,7 +233,7 @@ class RotNetDataGenerator(Iterator):
     """
 
     def __init__(self, input, input_shape=None, color_mode='rgb', batch_size=64,
-                 one_hot=True, preprocess_func=None, rotate=True, crop_center=False,
+                 one_hot=True, preprocess_func=None, rotate=-1, crop_center=False,
                  crop_largest_rect=False, shuffle=False, seed=None):
 
         self.images = None
@@ -282,16 +283,16 @@ class RotNetDataGenerator(Iterator):
                 if is_color:
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-            if self.rotate:
+            if self.rotate == -1:
                 # get a random angle
                 rotation_angle = np.random.randint(360)
             else:
-                rotation_angle = 0
+                rotation_angle = self.rotate
 
             # generate the rotated image
             rotated_image = generate_rotated_image(
                 image,
-                rotation_angle,
+                360-rotation_angle,
                 size=self.input_shape[:2],
                 crop_center=self.crop_center,
                 crop_largest_rect=self.crop_largest_rect
