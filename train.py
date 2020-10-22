@@ -10,7 +10,7 @@ if __name__ == "__main__":
         deg_resolution=5,
         make_grayscale=False,
         input_shape=(224, 224),
-        use_resnet=False
+        backbone="simple"
     )
 
     input_path = "/home/henrypaul/LDARPT/rotnet/autoscout"
