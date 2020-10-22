@@ -10,10 +10,11 @@ from Vision.models.classification_model import ClassificationModel
 from Vision.utils.parallelisation import parallelize_with_thread_pool
 from keras import Model as _kModel, Input
 from keras.applications import ResNet50
-from keras.applications.resnet50 import preprocess_input as resnet_pre
 from keras.applications.imagenet_utils import preprocess_input as imagenet_pre
+from keras.applications.resnet50 import preprocess_input as resnet_pre
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
-from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout
+from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout, BatchNormalization, Activation, \
+    GlobalAvgPool2D, Add
 from keras.models import load_model
 from keras.optimizers import Optimizer
 
@@ -23,7 +24,65 @@ from vision_generator import VocRotGenerator
 OUTPUT_FOLDER = 'saved_models'
 SPLIT_NAMES = ["train", "val", "test"]
 
-BACKBONES = ["resnet50", "simple"]
+BACKBONES = ["resnet50", "custom"]
+
+
+def initial_block(filters):
+    def f(input):
+        x = Conv2D(
+            filters,
+            7,
+            strides=2,
+            padding="same",
+            use_bias=False
+        )(input)
+        x = BatchNormalization()(x)
+        x = Activation("relu")(x)
+        x = MaxPooling2D(pool_size=3, strides=2, padding="same")(x)
+        return x
+
+    return f
+
+
+def residual_block(filters, stride, n):
+    def f(x):
+        z = Conv2D(
+            filters,
+            3,
+            strides=stride,
+            padding="same",
+            kernel_initializer="he_normal",
+            use_bias=False,
+            name="conv_resblk_{}_main_1".format(n)
+        )(x)
+        z = BatchNormalization(name="bn_resblk_{}_main_1".format(n))(z)
+        z = Activation("relu", name="act_resblk_{}_main_1".format(n))(z)
+        z = Conv2D(
+            filters,
+            3,
+            padding="same",
+            use_bias=False,
+            kernel_initializer="he_normal",
+            name="conv_resblk_{}_main_2".format(n)
+        )(z)
+        z = BatchNormalization(name="bn_resblk_{}_main_2".format(n).format(n))(z)
+        z_skip = x
+        if stride > 1:
+            z_skip = Conv2D(
+                filters,
+                1,
+                strides=stride,
+                padding="same",
+                use_bias=False,
+                kernel_initializer="he_normal",
+                name="conv_resblk_{}_skip".format(n)
+            )(z_skip)
+            z_skip = BatchNormalization(name="bn_resblk_{}_skip".format(n))(z_skip)
+        z_add = Add(name="add_resblk_{}".format(n))([z, z_skip])
+        out = Activation("relu", name="act_resblk_{}".format(n))(z_add)
+        return out
+
+    return f
 
 
 def create_subfolders(src, n_splits):
@@ -111,29 +170,28 @@ class RotNet(ClassificationModel):
             return self.simple_build()
 
     def simple_build(self):
-        # size of pooling area for max pooling
-        pool_size = (2, 2)
-        # convolution kernel size
-        kernel_size = (3, 3)
-
-        # number of classes
+        # Input layer
         input_shape = self.input_shape + (self.color_channels,)
+
         input_layer = Input(shape=input_shape)
-        x = Conv2D(64, kernel_size, activation='relu', padding="same")(input_layer)
-        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
-        x = Dropout(0.25)(x)
-        x = Conv2D(32, kernel_size, activation='relu')(x)
-        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
-        x = Dropout(0.25)(x)
-        x = Conv2D(16, kernel_size, activation='relu')(x)
-        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
-        x = Dropout(0.25)(x)
-        x = Conv2D(8, kernel_size, activation='relu')(x)
-        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
-        x = Dropout(0.25)(x)
-        x = Flatten()(x)
-        x = Dense(128, activation='relu')(x)
-        x = Dropout(0.25)(x)
+
+        # Initial filter size
+        filt_0 = 64
+        x = initial_block(filt_0)(input_layer)
+
+        # ResidualBlocks
+        res_block_depths = [1, 1, 1, 1]
+        res_filters = [[filt_0 * 2 ** i] * depth for i, depth in enumerate(res_block_depths)]
+        for i in range(len(res_block_depths)):
+            for filters in res_filters[i]:
+                strides = int(filters / filt_0)
+                x = residual_block(filters, strides, i)(x)
+                filt_0 = filters
+
+        x = GlobalAvgPool2D()(x)
+        # x = Flatten()(x)
+        # x = Dense(128, activation="relu")(x)
+        # x = Dropout(0.5)(x)
         output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
 
         model = _kModel(inputs=input_layer, outputs=output_layer)
@@ -172,14 +230,15 @@ class RotNet(ClassificationModel):
     def get_callbacks(self):
         # callbacks
         monitor = "val_angle_error"
+        file_name = "{}-{}".format(self.model_name, self.backbone)
         checkpointer = ModelCheckpoint(
-            filepath=os.path.join(OUTPUT_FOLDER, self.model_name + '.hdf5'),
+            filepath=os.path.join(OUTPUT_FOLDER, "{}.hdf5".format(file_name)),
             monitor=monitor,
             save_best_only=True
         )
         reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
         early_stopping = EarlyStopping(monitor=monitor, patience=5)
-        tensorboard = TensorBoard()
+        tensorboard = TensorBoard(log_dir=os.path.join("logs", file_name))
 
         return [checkpointer, reduce_lr, early_stopping, tensorboard]
 

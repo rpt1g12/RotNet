@@ -1,16 +1,18 @@
-import os
+from datetime import datetime as dt
 
 from keras.optimizers import SGD
 
 from rotnet import RotNet
 
 if __name__ == "__main__":
+    today = dt.date(dt.now()).__str__()
+    model_name = "RotNet-{}".format(today)
     rotnet = RotNet(
-        model_name="RotNet-Simple-2020-10-21",
-        deg_resolution=5,
+        model_name=model_name,
+        deg_resolution=2,
         make_grayscale=False,
-        input_shape=(224, 224),
-        backbone="simple"
+        input_shape=(256, 256),
+        backbone="custom"
     )
 
     input_path = "/home/henrypaul/LDARPT/rotnet/autoscout"
