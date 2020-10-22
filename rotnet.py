@@ -103,25 +103,25 @@ class RotNet(ClassificationModel):
 
         # number of classes
         input_shape = self.input_shape + (self.color_channels,)
-        input = Input(shape=input_shape)
-        x = Conv2D(64, kernel_size, activation='relu',padding="same")(input)
-        x = MaxPooling2D(pool_size=pool_size,padding="same")(x)
+        input_layer = Input(shape=input_shape)
+        x = Conv2D(64, kernel_size, activation='relu', padding="same")(input_layer)
+        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
         x = Dropout(0.25)(x)
         x = Conv2D(32, kernel_size, activation='relu')(x)
-        x = MaxPooling2D(pool_size=pool_size,padding="same")(x)
+        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
         x = Dropout(0.25)(x)
         x = Conv2D(16, kernel_size, activation='relu')(x)
-        x = MaxPooling2D(pool_size=pool_size,padding="same")(x)
+        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
         x = Dropout(0.25)(x)
         x = Conv2D(8, kernel_size, activation='relu')(x)
-        x = MaxPooling2D(pool_size=pool_size,padding="same")(x)
+        x = MaxPooling2D(pool_size=pool_size, padding="same")(x)
         x = Dropout(0.25)(x)
         x = Flatten()(x)
         x = Dense(128, activation='relu')(x)
         x = Dropout(0.25)(x)
-        final_output = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
+        output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
 
-        model = _kModel(inputs=input, outputs=final_output)
+        model = _kModel(inputs=input_layer, outputs=output_layer)
 
         model.summary()
         return model
@@ -242,11 +242,17 @@ class RotNet(ClassificationModel):
             max_queue_size=max_queue_size
         )
 
+    def preprocess_sample(self, sample: Sample) -> np.ndarray:
+        return self.preprocess_image_array(sample.get_img_arr())
+
+    def preprocess_image_array(self, img_array: np.ndarray) -> np.ndarray:
+        # Ressize image to fit expected size for VGG and pre-process it
+        resized_img = cv2.resize(img_array, self.input_shape)
+        vector_img = np.expand_dims(resized_img, axis=0)
+        return preprocess_input(vector_img)
+
     def predict_image_array(self, img_array: np.ndarray) -> Dict[str, float]:
-        # Preprocess image input
-        resized = cv2.resize(img_array, self.input_shape)
-        x = preprocess_input(resized)
-        scores = self.kmodel.predict(np.expand_dims(x, axis=0))
+        scores = self.kmodel.predict(self.preprocess_image_array(img_array))
         theta = np.argmax(scores) * self.deg_resolution
         return {"theta": theta}
 
@@ -256,8 +262,6 @@ class RotNet(ClassificationModel):
         :param sample: Muestra de entrada
         :return: Muestra con nuevas etiquetas predichas.
         """
-        metadata = sample.get_metadata()
-        metadata.update(self.predict_sample(sample))
+        theta = self.predict_sample(sample).get("theta") or 0
         prediction = sample.clone()
-        prediction.set_metadata(metadata)
-        return prediction
+        return prediction.set_rotation(theta).apply_rotation()
