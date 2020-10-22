@@ -1,25 +1,29 @@
 import os
 from typing import Dict, Tuple
 
+import cv2
 import keras.backend as K
 import numpy as np
-import cv2
 from Vision import Sample
 from Vision.io_managers import VOC
 from Vision.models.classification_model import ClassificationModel
 from Vision.utils.parallelisation import parallelize_with_thread_pool
 from keras import Model as _kModel, Input
-from keras.models import load_model
 from keras.applications import ResNet50
+from keras.applications.resnet50 import preprocess_input as resnet_pre
+from keras.applications.imagenet_utils import preprocess_input as imagenet_pre
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
 from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout
-from keras.optimizers import SGD
-from keras.applications.densenet import preprocess_input
+from keras.models import load_model
+from keras.optimizers import Optimizer
+
 from utils import REGEX_IMG, angle_difference
 from vision_generator import VocRotGenerator
 
 OUTPUT_FOLDER = 'saved_models'
 SPLIT_NAMES = ["train", "val", "test"]
+
+BACKBONES = ["resnet50", "simple"]
 
 
 def create_subfolders(src, n_splits):
@@ -39,7 +43,10 @@ def get_move_files_function(src, split_name):
     # Helper function to move the files from src to dst
     def move_file(file_name_tuple: Tuple[str, str]):
         src_tuple = (src,) + file_name_tuple
-        os.rename(os.path.join(*src_tuple), os.path.join(dst, file_name_tuple[1]))
+        src_path = os.path.join(*src_tuple)
+        dst_path = os.path.join(dst, file_name_tuple[1])
+        if src_path != dst_path:
+            os.rename(src_path, dst_path)
 
     # Function that will move the image file as well as its voc
     def f(image_tuple_path: Tuple[str, str]):
@@ -58,7 +65,7 @@ class RotNet(ClassificationModel):
                  deg_resolution: int,
                  make_grayscale: bool,
                  input_shape: Tuple[int, int],
-                 use_resnet=False,
+                 backbone="simple",
                  output_folder=OUTPUT_FOLDER):
         super(RotNet, self).__init__()
         # Make sure the output path is available
@@ -72,7 +79,8 @@ class RotNet(ClassificationModel):
         self.make_grayscale = make_grayscale
         self.color_channels = 1 if make_grayscale else 3
         self.input_shape = input_shape
-        self.use_resnet = use_resnet
+        assert backbone in BACKBONES, "backbone should be one of: \n\t{}".format(BACKBONES)
+        self.backbone = backbone
         self.kmodel = self.build()
         self.sample_sources = dict()
 
@@ -90,8 +98,14 @@ class RotNet(ClassificationModel):
 
         return angle_error
 
+    def get_preprocessing_function(self):
+        if self.backbone == "resnet50":
+            return resnet_pre
+        else:
+            return imagenet_pre
+
     def build(self):
-        if self.use_resnet:
+        if self.backbone == "resnet50":
             return self.restnet_build()
         else:
             return self.simple_build()
@@ -144,11 +158,11 @@ class RotNet(ClassificationModel):
 
         return model
 
-    def compile(self):
+    def compile(self, optimizer: Optimizer = None):
         angle_error = self.get_angle_error_function()
-        if self.use_resnet:
+        if optimizer is not None:
             self.kmodel.compile(loss='categorical_crossentropy',
-                                optimizer=SGD(lr=0.01, momentum=0.9),
+                                optimizer=optimizer,
                                 metrics=[angle_error])
         else:
             self.kmodel.compile(loss='categorical_crossentropy',
@@ -175,7 +189,7 @@ class RotNet(ClassificationModel):
             assert s > 0, "the splits % must be positive"
         src = voc_in_path
         # Get filenames of images recursively and relative folder with respect to src
-        files = [(os.path.relpath(r,src), f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
+        files = [(os.path.relpath(r, src), f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
         # Sort files by their basename
         files.sort(key=lambda t: t[1])
 
@@ -195,10 +209,9 @@ class RotNet(ClassificationModel):
         self.kmodel = load_model(hdf5_path, compile=False)
         self.compile()
 
-    def train(self, epochs, batch_size, n_aug=0,
+    def train(self, epochs, batch_size, optimizer: Optimizer, n_aug=0,
               train_source: str = None, val_source: str = None,
-              workers: int = 2, multiprocessing: bool = False,
-              max_queue_size=20
+              **kwargs
               ):
         train_path = train_source or self.sample_sources.get(SPLIT_NAMES[0])
         val_path = val_source or self.sample_sources.get(SPLIT_NAMES[1])
@@ -213,7 +226,7 @@ class RotNet(ClassificationModel):
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
             batch_size=batch_size,
-            preprocessing_function=preprocess_input,
+            preprocessing_function=self.get_preprocessing_function(),
             make_grayscale=self.make_grayscale,
             n_aug=n_aug
         )
@@ -223,14 +236,14 @@ class RotNet(ClassificationModel):
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
             batch_size=batch_size,
-            preprocessing_function=preprocess_input,
+            preprocessing_function=self.get_preprocessing_function(),
             make_grayscale=self.make_grayscale,
             n_aug=0,
             shuffle=False
         )
 
         # Compile model
-        self.compile()
+        self.compile(optimizer=optimizer)
 
         # training loop
         self.kmodel.fit_generator(
@@ -240,9 +253,7 @@ class RotNet(ClassificationModel):
             validation_data=val_generator,
             validation_steps=len(val_generator),
             callbacks=self.get_callbacks(),
-            workers=workers,
-            use_multiprocessing=multiprocessing,
-            max_queue_size=max_queue_size
+            **kwargs
         )
 
     def preprocess_sample(self, sample: Sample) -> np.ndarray:
@@ -252,7 +263,8 @@ class RotNet(ClassificationModel):
         # Ressize image to fit expected size for VGG and pre-process it
         resized_img = cv2.resize(img_array, self.input_shape)
         vector_img = np.expand_dims(resized_img, axis=0)
-        return preprocess_input(vector_img)
+        pre = self.get_preprocessing_function()
+        return pre(vector_img)
 
     def predict_image_array(self, img_array: np.ndarray) -> Dict[str, float]:
         scores = self.kmodel.predict(self.preprocess_image_array(img_array))
