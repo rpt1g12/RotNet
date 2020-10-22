@@ -37,15 +37,16 @@ def get_move_files_function(src, split_name):
         os.makedirs(dst)
 
     # Helper function to move the files from src to dst
-    def move_file(file_name: str):
-        os.rename(os.path.join(src, file_name), os.path.join(dst, file_name))
+    def move_file(file_name_tuple: Tuple[str, str]):
+        src_tuple = (src,) + file_name_tuple
+        os.rename(os.path.join(*src_tuple), os.path.join(dst, file_name_tuple[1]))
 
     # Function that will move the image file as well as its voc
-    def f(image_path: str):
-        image_file = os.path.basename(image_path)
+    def f(image_tuple_path: Tuple[str, str]):
+        image_file = image_tuple_path[1]
         voc_file = REGEX_IMG.sub(r"\1xml", image_file)
-        move_file(image_file)
-        move_file(voc_file)
+        move_file((image_tuple_path[0], image_file))
+        move_file((image_tuple_path[0], voc_file))
 
     return f
 
@@ -173,8 +174,10 @@ class RotNet(ClassificationModel):
         for s in splits:
             assert s > 0, "the splits % must be positive"
         src = voc_in_path
-        # Get filenames of images
-        files = [os.path.join(r, f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
+        # Get filenames of images recursively and relative folder with respect to src
+        files = [(os.path.relpath(r,src), f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
+        # Sort files by their basename
+        files.sort(key=lambda t: t[1])
 
         idx0 = 0
         n_samples = len(files)
