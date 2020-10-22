@@ -11,7 +11,7 @@ from Vision.utils.parallelisation import parallelize_with_thread_pool
 from keras import Model as _kModel, Input
 from keras.models import load_model
 from keras.applications import ResNet50
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
 from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout
 from keras.optimizers import SGD
 from keras.applications.densenet import preprocess_input
@@ -164,8 +164,9 @@ class RotNet(ClassificationModel):
         )
         reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
         early_stopping = EarlyStopping(monitor=monitor, patience=5)
+        tensorboard = TensorBoard()
 
-        return [checkpointer, reduce_lr, early_stopping]
+        return [checkpointer, reduce_lr, early_stopping, tensorboard]
 
     def create_train_split(self, voc_in_path: str, splits=[0.7, 0.15, 0.15]):
         assert sum(splits) == 1.0, "the sum of the splits should be 1.0"
@@ -193,7 +194,9 @@ class RotNet(ClassificationModel):
 
     def train(self, epochs, batch_size, n_aug=0,
               train_source: str = None, val_source: str = None,
-              workers: int = 2, multiprocessing: bool = False):
+              workers: int = 2, multiprocessing: bool = False,
+              max_queue_size=20
+              ):
         train_path = train_source or self.sample_sources.get(SPLIT_NAMES[0])
         val_path = val_source or self.sample_sources.get(SPLIT_NAMES[1])
 
@@ -235,7 +238,8 @@ class RotNet(ClassificationModel):
             validation_steps=len(val_generator),
             callbacks=self.get_callbacks(),
             workers=workers,
-            use_multiprocessing=multiprocessing
+            use_multiprocessing=multiprocessing,
+            max_queue_size=max_queue_size
         )
 
     def predict_image_array(self, img_array: np.ndarray) -> Dict[str, float]:
