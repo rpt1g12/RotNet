@@ -176,22 +176,26 @@ class RotNet(ClassificationModel):
         input_layer = Input(shape=input_shape)
 
         # Initial filter size
-        filt_0 = 64
+        filt_0 = 16
         x = initial_block(filt_0)(input_layer)
 
         # ResidualBlocks
-        res_block_depths = [1, 1, 1, 1]
+        res_block_depths = [2, 3, 4, 2]
         res_filters = [[filt_0 * 2 ** i] * depth for i, depth in enumerate(res_block_depths)]
         for i in range(len(res_block_depths)):
-            for filters in res_filters[i]:
+            ii = i+1
+            for j,filters in enumerate(res_filters[i]):
+                jj = j+1
                 strides = int(filters / filt_0)
-                x = residual_block(filters, strides, i)(x)
+                x = residual_block(filters, strides, ii*10+jj)(x)
                 filt_0 = filters
 
         x = GlobalAvgPool2D()(x)
         # x = Flatten()(x)
-        # x = Dense(128, activation="relu")(x)
-        # x = Dropout(0.5)(x)
+        x = Dense(128, activation="relu")(x)
+        x = Dropout(0.2)(x)
+        x = Dense(256, activation="relu")(x)
+        x = Dropout(0.2)(x)
         output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
 
         model = _kModel(inputs=input_layer, outputs=output_layer)
@@ -338,4 +342,4 @@ class RotNet(ClassificationModel):
         """
         theta = self.predict_sample(sample).get("theta") or 0
         prediction = sample.clone()
-        return prediction.set_rotation(theta).apply_rotation()
+        return prediction.set_rotation(-theta).apply_rotation()
