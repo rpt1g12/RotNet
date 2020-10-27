@@ -1,6 +1,8 @@
+import os
 from datetime import datetime as dt
 
-from keras.optimizers import SGD
+from Vision.io_managers import ImageManager
+from keras.optimizers import SGD, Adam
 
 from rotnet import RotNet
 
@@ -15,13 +17,19 @@ if __name__ == "__main__":
         backbone="custom"
     )
 
-    input_path = "/home/henrypaul/LDARPT/rotnet/autoscout"
-    rotnet.create_train_split(input_path, [0.8, 0.1, 0.1])
+    input_path = "/home/henrypaul/LDARPT/datasets/rotation"
+    # rotnet.create_train_split(input_path, [0.8, 0.1, 0.1])
 
     rotnet.train(
+        train_man=ImageManager(
+            in_path=os.path.join(input_path, "train")
+        ),
+        val_man=ImageManager(
+            in_path=os.path.join(input_path, "val"))
+        ,
         epochs=50,
         batch_size=64,
-        optimizer=SGD(lr=0.01, momentum=0.9, decay=0.001),
+        optimizer=Adam(),
         n_aug=0,
         workers=32,
         max_queue_size=128

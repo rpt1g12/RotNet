@@ -5,7 +5,7 @@ import cv2
 import keras.backend as K
 import numpy as np
 from Vision import Sample
-from Vision.io_managers import VOC
+from Vision.io_managers import VOC, Manager
 from Vision.models.classification_model import ClassificationModel
 from Vision.utils.parallelisation import parallelize_with_thread_pool
 from keras import Model as _kModel, Input
@@ -141,7 +141,6 @@ class RotNet(ClassificationModel):
         assert backbone in BACKBONES, "backbone should be one of: \n\t{}".format(BACKBONES)
         self.backbone = backbone
         self.kmodel = self.build()
-        self.sample_sources = dict()
 
     def get_angle_error_function(self):
         factor = self.deg_resolution
@@ -191,7 +190,6 @@ class RotNet(ClassificationModel):
                 filt_0 = filters
 
         x = GlobalAvgPool2D()(x)
-        # x = Flatten()(x)
         x = Dense(128, activation="relu")(x)
         x = Dropout(0.2)(x)
         x = Dense(256, activation="relu")(x)
@@ -260,7 +258,6 @@ class RotNet(ClassificationModel):
         n_samples = len(files)
         for i in range(len(splits)):
             split_name = SPLIT_NAMES[i]
-            self.sample_sources[split_name] = os.path.join(src, split_name)
             move_function = get_move_files_function(src, split_name)
             # Select indices to move
             idx1 = int(n_samples * splits[i]) + idx0 if (i < (len(splits) - 1)) else n_samples
@@ -272,20 +269,17 @@ class RotNet(ClassificationModel):
         self.kmodel = load_model(hdf5_path, compile=False)
         self.compile()
 
-    def train(self, epochs, batch_size, optimizer: Optimizer, n_aug=0,
-              train_source: str = None, val_source: str = None,
-              **kwargs
+    def train(self, epochs, batch_size, optimizer: Optimizer,
+              train_man: Manager, val_man: Manager,
+              n_aug=0, **kwargs
               ):
-        train_path = train_source or self.sample_sources.get(SPLIT_NAMES[0])
-        val_path = val_source or self.sample_sources.get(SPLIT_NAMES[1])
 
-        assert train_path is not None, "You must set the train_source. Either call `create_train_split` or provide" \
-                                       "a path to the train folder"
-        assert val_path is not None, "You must set the val_source. Either call `create_train_split` or provide" \
-                                     "a path to the val folder"
+        train_man.set_batch_size(batch_size)
+        val_man.set_batch_size(batch_size)
+
         # Define generators
         train_generator = RotNetManager(
-            manager=VOC(in_path=train_path, batch_size=batch_size),
+            manager=train_man,
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
             batch_size=batch_size,
@@ -295,7 +289,7 @@ class RotNet(ClassificationModel):
         )
 
         val_generator = RotNetManager(
-            manager=VOC(in_path=val_path, batch_size=batch_size),
+            manager=val_man,
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
             batch_size=batch_size,
