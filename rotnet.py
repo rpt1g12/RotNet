@@ -19,7 +19,7 @@ from keras.models import load_model
 from keras.optimizers import Optimizer
 
 from utils import REGEX_IMG, angle_difference
-from vision_generator import VocRotGenerator
+from vision_generator import RotNetManager
 
 OUTPUT_FOLDER = 'saved_models'
 SPLIT_NAMES = ["train", "val", "test"]
@@ -124,7 +124,7 @@ class RotNet(ClassificationModel):
                  deg_resolution: int,
                  make_grayscale: bool,
                  input_shape: Tuple[int, int],
-                 backbone="simple",
+                 backbone: str,
                  output_folder=OUTPUT_FOLDER):
         super(RotNet, self).__init__()
         # Make sure the output path is available
@@ -183,11 +183,11 @@ class RotNet(ClassificationModel):
         res_block_depths = [2, 3, 4, 2]
         res_filters = [[filt_0 * 2 ** i] * depth for i, depth in enumerate(res_block_depths)]
         for i in range(len(res_block_depths)):
-            ii = i+1
-            for j,filters in enumerate(res_filters[i]):
-                jj = j+1
+            ii = i + 1
+            for j, filters in enumerate(res_filters[i]):
+                jj = j + 1
                 strides = int(filters / filt_0)
-                x = residual_block(filters, strides, ii*10+jj)(x)
+                x = residual_block(filters, strides, ii * 10 + jj)(x)
                 filt_0 = filters
 
         x = GlobalAvgPool2D()(x)
@@ -284,7 +284,7 @@ class RotNet(ClassificationModel):
         assert val_path is not None, "You must set the val_source. Either call `create_train_split` or provide" \
                                      "a path to the val folder"
         # Define generators
-        train_generator = VocRotGenerator(
+        train_generator = RotNetManager(
             manager=VOC(in_path=train_path, batch_size=batch_size),
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
@@ -294,7 +294,7 @@ class RotNet(ClassificationModel):
             n_aug=n_aug
         )
 
-        val_generator = VocRotGenerator(
+        val_generator = RotNetManager(
             manager=VOC(in_path=val_path, batch_size=batch_size),
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
@@ -342,4 +342,4 @@ class RotNet(ClassificationModel):
         """
         theta = self.predict_sample(sample).get("theta") or 0
         prediction = sample.clone()
-        return prediction.set_rotation(-theta).apply_rotation()
+        return prediction.set_rotation(-theta)

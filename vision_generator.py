@@ -1,14 +1,11 @@
-import abc
-
-import cv2
 from typing import Tuple
 
+import cv2
 import numpy as np
 from Vision import Sample
 from Vision.io_managers import Manager, SampleAugmenter
 from Vision.sample import Sample_List, Sample_Generator
 from keras.utils import to_categorical
-from keras_preprocessing.image import Iterator
 
 
 def gray_preprocessor(sample: Sample, theta: float, input_shape, crop) -> Sample:
@@ -20,7 +17,7 @@ def color_preprocessor(sample: Sample, theta: float, input_shape, crop) -> Sampl
     return sample.set_rotation(theta).apply_rotation(crop).resize(input_shape)
 
 
-class VocRotGenerator(Manager):
+class RotNetManager(Manager):
     """Docstring"""
 
     def __init__(self, manager: Manager,
@@ -45,16 +42,29 @@ class VocRotGenerator(Manager):
         self.rotate = rotate
         self.make_grayscale = make_grayscale
         if type(manager) != SampleAugmenter:
-            total_samples = len(manager.file_list)
             self.manager = manager
             if n_aug:
                 self.manager = SampleAugmenter(self.manager, angle_chance=0, n_aug=n_aug)
         else:
-            total_samples = len(manager.manager.file_list)
             self.manager = manager
         self.preprocessing_function = preprocessing_function
         self.manager.set_batch_size(batch_size)
-        super().__init__(total_samples, batch_size, shuffle, seed)
+        super(RotNetManager, self).__init__(self.manager.get_in_path(), self.manager.get_out_path(),
+                                            self.manager.get_file_list(),
+                                            batch_size,
+                                            shuffle, seed)
+
+    def clone(self) -> "RotNetManager":
+        return RotNetManager(
+            manager=self.manager,
+            input_shape=self.input_shape,
+            deg_resolution=self.deg_resolution,
+            batch_size=self.batch_size,
+            rotate=self.rotate,
+            make_grayscale=self.make_grayscale,
+            shuffle=self.shuffle,
+            seed=self.seed
+        )
 
     def _get_batches_of_transformed_samples(self, index_array):
         shape = self.input_shape
