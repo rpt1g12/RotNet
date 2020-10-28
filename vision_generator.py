@@ -10,11 +10,19 @@ from keras.utils import to_categorical
 
 def gray_preprocessor(sample: Sample, theta: float, input_shape, crop) -> Sample:
     sample.set_img(cv2.cvtColor(sample.get_img_arr(), cv2.COLOR_BGR2GRAY))
-    return sample.set_rotation(theta).apply_rotation(crop).resize(input_shape)
+    return sample.set_rotation(theta).apply_rotation(crop).resize(input_shape).set_rotation(theta)
 
 
 def color_preprocessor(sample: Sample, theta: float, input_shape, crop) -> Sample:
-    return sample.set_rotation(theta).apply_rotation(crop).resize(input_shape)
+    return sample.set_rotation(theta).apply_rotation(crop).resize(input_shape).set_rotation(theta)
+
+
+def random_theta_batch(batch_size, deg_resolution):
+    # Get random angles to rotate images
+    thetas = np.random.randint(0, 360, batch_size)
+    # Force the angles to the correct resolution
+    thetas -= np.remainder(thetas, deg_resolution)
+    return thetas
 
 
 class RotNetManager(Manager):
@@ -25,6 +33,7 @@ class RotNetManager(Manager):
                  deg_resolution: int = 2,
                  batch_size=32,
                  rotate=-1,
+                 fixed=False,
                  preprocessing_function=None,
                  crop=True,
                  n_aug=0,
@@ -37,7 +46,7 @@ class RotNetManager(Manager):
         self.batch_size = batch_size
         self.color_channels = 1 if make_grayscale else 3
         self.crop = crop
-        if rotate > 0:
+        if rotate >= 0:
             assert rotate % deg_resolution == 0, "Resolution must be a factor of rotate"
         self.rotate = rotate
         self.make_grayscale = make_grayscale
@@ -49,6 +58,16 @@ class RotNetManager(Manager):
             self.manager = manager
         self.preprocessing_function = preprocessing_function
         self.manager.set_batch_size(batch_size)
+        if fixed and rotate < 0:
+            self.stored_thetas = random_theta_batch(len(manager.get_file_list()), deg_resolution)
+        elif rotate >= 0:
+            self.stored_thetas = np.ones(len(manager.get_file_list())) * rotate
+            print("Rotation is fixed because rotate>0")
+            fixed = True
+        else:
+            self.stored_thetas = None
+            fixed = False
+        self.fixed = fixed
         super(RotNetManager, self).__init__(self.manager.get_in_path(), self.manager.get_out_path(),
                                             self.manager.get_file_list(),
                                             batch_size,
@@ -61,6 +80,7 @@ class RotNetManager(Manager):
             deg_resolution=self.deg_resolution,
             batch_size=self.batch_size,
             rotate=self.rotate,
+            fixed=self.fixed,
             make_grayscale=self.make_grayscale,
             shuffle=self.shuffle,
             seed=self.seed
@@ -70,7 +90,7 @@ class RotNetManager(Manager):
         shape = self.input_shape
         batch_size = len(index_array)
         # Get random angles to rotate images
-        thetas = self._get_thetas(batch_size)
+        thetas = self._get_thetas(index_array)
         # Allocate arrays
         input_tensor = np.zeros((batch_size,) + shape + (self.color_channels,))
         target_tensor = thetas / self.deg_resolution
@@ -90,13 +110,15 @@ class RotNetManager(Manager):
         return input_tensor, to_categorical(target_tensor, n_classes)
 
     def write_sample(self, sample: Sample, write_image=False) -> int:
-        pass
+        raise NotImplementedError
 
-    def sample_generator(self, batch_size: int) -> Sample_Generator:
+    def sample_generator(self, batch_size: int = 0) -> Sample_Generator:
+        if batch_size > 0:
+            self.set_batch_size(batch_size)
         pass
 
     def write_samples(self, samples: Sample_List, write_image=False) -> int:
-        pass
+        raise NotImplementedError
 
     def read_sample(self, n: int) -> Sample:
         # Preprocessor
@@ -104,15 +126,11 @@ class RotNetManager(Manager):
             preprocessor = gray_preprocessor
         else:
             preprocessor = color_preprocessor
-        theta = self._get_thetas(1)[0]
+        theta = self._get_thetas(np.asarray([n]))[0]
         return preprocessor(self.manager.read_sample(n), theta, self.input_shape, self.crop)
 
-    def _get_thetas(self, batch_size):
-        # Get random angles to rotate images
-        if self.rotate < 0:
-            thetas = np.random.randint(0, 360, batch_size)
-            # Force the angles to the correct resolution
-            thetas -= np.remainder(thetas, self.deg_resolution)
+    def _get_thetas(self, index_array):
+        if self.fixed:
+            return self.stored_thetas[index_array]
         else:
-            thetas = np.ones(batch_size) * self.rotate
-        return thetas
+            return random_theta_batch(len(index_array), self.deg_resolution)

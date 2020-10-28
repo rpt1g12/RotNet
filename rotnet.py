@@ -140,7 +140,9 @@ class RotNet(ClassificationModel):
         self.input_shape = input_shape
         assert backbone in BACKBONES, "backbone should be one of: \n\t{}".format(BACKBONES)
         self.backbone = backbone
-        self.kmodel = self.build()
+        self.kmodel = None
+        self.train_generator = None
+        self.val_generator = None
 
     def get_angle_error_function(self):
         factor = self.deg_resolution
@@ -164,11 +166,11 @@ class RotNet(ClassificationModel):
 
     def build(self):
         if self.backbone == "resnet50":
-            return self.restnet_build()
+            self.kmodel = self.restnet_build()
         else:
-            return self.simple_build()
+            self.kmodel = self.custom_build()
 
-    def simple_build(self):
+    def custom_build(self):
         # Input layer
         input_shape = self.input_shape + (self.color_channels,)
 
@@ -197,8 +199,6 @@ class RotNet(ClassificationModel):
         output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
 
         model = _kModel(inputs=input_layer, outputs=output_layer)
-
-        model.summary()
         return model
 
     def restnet_build(self) -> _kModel:
@@ -214,8 +214,6 @@ class RotNet(ClassificationModel):
 
         # create the new model
         model = _kModel(inputs=base_model.input, outputs=final_output)
-        model.summary()
-
         return model
 
     def compile(self, optimizer: Optimizer = None):
@@ -269,7 +267,7 @@ class RotNet(ClassificationModel):
         self.kmodel = load_model(hdf5_path, compile=False)
         self.compile()
 
-    def train(self, epochs, batch_size, optimizer: Optimizer,
+    def train(self, epochs, batch_size,
               train_man: Manager, val_man: Manager,
               n_aug=0, **kwargs
               ):
@@ -278,37 +276,36 @@ class RotNet(ClassificationModel):
         val_man.set_batch_size(batch_size)
 
         # Define generators
-        train_generator = RotNetManager(
+        self.train_generator = RotNetManager(
             manager=train_man,
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
             batch_size=batch_size,
             preprocessing_function=self.get_preprocessing_function(),
             make_grayscale=self.make_grayscale,
+            fixed=True,
             n_aug=n_aug
         )
 
-        val_generator = RotNetManager(
+        self.val_generator = RotNetManager(
             manager=val_man,
             input_shape=self.input_shape,
             deg_resolution=self.deg_resolution,
             batch_size=batch_size,
             preprocessing_function=self.get_preprocessing_function(),
             make_grayscale=self.make_grayscale,
+            fixed=True,
             n_aug=0,
             shuffle=False
         )
 
-        # Compile model
-        self.compile(optimizer=optimizer)
-
         # training loop
         self.kmodel.fit_generator(
-            train_generator,
-            steps_per_epoch=len(train_generator),
+            self.train_generator,
+            steps_per_epoch=len(self.train_generator),
             epochs=epochs,
-            validation_data=val_generator,
-            validation_steps=len(val_generator),
+            validation_data=self.val_generator,
+            validation_steps=len(self.val_generator),
             callbacks=self.get_callbacks(),
             **kwargs
         )
