@@ -251,6 +251,7 @@ class RotNet(ClassificationModel):
         files = [(os.path.relpath(r, src), f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
         # Sort files by their basename
         files.sort(key=lambda t: t[1])
+        np.random.shuffle(files)
 
         idx0 = 0
         n_samples = len(files)
