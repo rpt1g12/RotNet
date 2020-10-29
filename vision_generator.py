@@ -2,10 +2,11 @@ from typing import Tuple
 
 import cv2
 import numpy as np
+from keras.utils import to_categorical
+
 from Vision import Sample
 from Vision.io_managers import Manager, SampleAugmenter
 from Vision.sample import Sample_List, Sample_Generator
-from keras.utils import to_categorical
 
 
 def gray_preprocessor(sample: Sample, theta: float, input_shape, crop) -> Sample:
@@ -83,6 +84,7 @@ class RotNetManager(Manager):
             batch_size=self.batch_size,
             rotate=self.rotate,
             fixed=self.fixed,
+            regression=self.regression,
             make_grayscale=self.make_grayscale,
             shuffle=self.shuffle,
             seed=self.seed
@@ -114,7 +116,7 @@ class RotNetManager(Manager):
         if self.preprocessing_function:
             input_tensor = self.preprocessing_function(input_tensor)
         if self.regression:
-            return input_tensor, np.expand_dims(target_tensor, axis=-1)
+            return input_tensor, target_tensor
         else:
             return input_tensor, to_categorical(target_tensor, n_classes)
 

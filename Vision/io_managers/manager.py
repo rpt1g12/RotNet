@@ -132,6 +132,6 @@ class Manager(Iterator, metaclass=abc.ABCMeta):
         batch_size = len(index_array)
         samples = list()
         for i in range(batch_size):
-            samples.append(self.read_sample(i))
+            samples.append(self.read_sample(index_array[i]))
         return samples
 

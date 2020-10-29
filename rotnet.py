@@ -5,20 +5,20 @@ import cv2
 import keras.backend as K
 import numpy as np
 import tensorflow as tf
-from Vision import Sample
-from Vision.io_managers import Manager
-from Vision.models.classification_model import ClassificationModel
-from Vision.utils.parallelisation import parallelize_with_thread_pool
 from keras import Model as _kModel, Input
 from keras.applications import ResNet50
 from keras.applications.imagenet_utils import preprocess_input as imagenet_pre
 from keras.applications.resnet50 import preprocess_input as resnet_pre
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
-from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout, BatchNormalization, Activation, \
+from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, BatchNormalization, Activation, \
     GlobalAvgPool2D, Add
 from keras.models import load_model
 from keras.optimizers import Optimizer
 
+from Vision import Sample
+from Vision.io_managers import Manager
+from Vision.models.classification_model import ClassificationModel
+from Vision.utils.parallelisation import parallelize_with_thread_pool
 from utils import REGEX_IMG
 from vision_generator import RotNetManager
 
@@ -172,10 +172,8 @@ class RotNet(ClassificationModel):
             return K.mean(K.cast(K.abs(diff), K.floatx()))
 
         def classification_loss(y_true, y_pred):
-            soft_true = softargmax(y_true, self.n_classes)
-            soft_pred = softargmax(y_pred, self.n_classes)
-            diff = angle_difference(soft_true, soft_pred)
-            return K.mean(diff)*factor/360
+            diff = angle_difference(softargmax(y_true, self.n_classes) * factor, softargmax(y_pred, self.n_classes) * factor)
+            return K.mean(K.cast(K.abs(diff), K.floatx()))
 
         def regression_loss(y_true, y_pred):
             """
