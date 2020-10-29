@@ -226,10 +226,10 @@ class RotNet(ClassificationModel):
                 filt_0 = filters
 
         x = GlobalAvgPool2D()(x)
-        x = Dense(128, activation="relu")(x)
-        x = Dropout(0.2)(x)
-        x = Dense(256, activation="relu")(x)
-        x = Dropout(0.2)(x)
+        # x = Dense(128, activation="relu")(x)
+        # x = Dropout(0.2)(x)
+        # x = Dense(256, activation="relu")(x)
+        # x = Dropout(0.2)(x)
         if self.regression:
             output_layer = Dense(1, activation="sigmoid", name="rotnet-output")(x)
         else:
@@ -313,7 +313,7 @@ class RotNet(ClassificationModel):
 
     def train(self, epochs, batch_size,
               train_man: Manager, val_man: Manager,
-              n_aug=0, **kwargs
+              n_aug=0, fixed=False, **kwargs
               ):
 
         train_man.set_batch_size(batch_size)
