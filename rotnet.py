@@ -27,11 +27,11 @@ SPLIT_NAMES = ["train", "val", "test"]
 BACKBONES = ["resnet50", "custom"]
 
 
-def initial_block(filters):
+def initial_block(filters, kernel_size):
     def f(input):
         x = Conv2D(
             filters,
-            7,
+            kernel_size,
             strides=2,
             padding="same",
             use_bias=False
@@ -178,10 +178,10 @@ class RotNet(ClassificationModel):
 
         # Initial filter size
         filt_0 = 16
-        x = initial_block(filt_0)(input_layer)
+        x = initial_block(filt_0,7)(input_layer)
 
         # ResidualBlocks
-        res_block_depths = [2, 3, 4, 2]
+        res_block_depths = [2, 2, 2, 2]
         res_filters = [[filt_0 * 2 ** i] * depth for i, depth in enumerate(res_block_depths)]
         for i in range(len(res_block_depths)):
             ii = i + 1
@@ -236,8 +236,8 @@ class RotNet(ClassificationModel):
             monitor=monitor,
             save_best_only=True
         )
-        reduce_lr = ReduceLROnPlateau(monitor=monitor, patience=3)
-        early_stopping = EarlyStopping(monitor=monitor, patience=5)
+        reduce_lr = ReduceLROnPlateau(monitor="val_loss", patience=3)
+        early_stopping = EarlyStopping(monitor=monitor, patience=10)
         tensorboard = TensorBoard(log_dir=os.path.join("logs", file_name))
 
         return [checkpointer, reduce_lr, early_stopping, tensorboard]
@@ -264,13 +264,14 @@ class RotNet(ClassificationModel):
             # Update left bound of indices
             idx0 = idx1
 
-    def load(self, hdf5_path):
+    def load(self, hdf5_path, compile_model=True):
         self.kmodel = load_model(hdf5_path, compile=False)
-        self.compile()
+        if compile_model:
+            self.compile()
 
     def train(self, epochs, batch_size,
               train_man: Manager, val_man: Manager,
-              n_aug=0, **kwargs
+              n_aug=0, fixed=False, **kwargs
               ):
 
         train_man.set_batch_size(batch_size)
@@ -284,7 +285,7 @@ class RotNet(ClassificationModel):
             batch_size=batch_size,
             preprocessing_function=self.get_preprocessing_function(),
             make_grayscale=self.make_grayscale,
-            fixed=True,
+            fixed=fixed,
             n_aug=n_aug
         )
 

@@ -101,8 +101,9 @@ class RotNetManager(Manager):
         else:
             preprocessor = color_preprocessor
 
+        samples = self.manager._get_batches_of_transformed_samples(index_array)
         for i in range(batch_size):
-            sample = self.manager.read_sample(index_array[i])
+            sample = samples[i]
             sample = preprocessor(sample, thetas[i], shape, self.crop)
             input_tensor[i] = sample.get_img_arr()[:, :, :self.color_channels]
         if self.preprocessing_function:
