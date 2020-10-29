@@ -37,6 +37,7 @@ class RotNetManager(Manager):
                  preprocessing_function=None,
                  crop=True,
                  n_aug=0,
+                 regression=False,
                  make_grayscale: bool = False,
                  shuffle=True,
                  seed=0):
@@ -49,6 +50,7 @@ class RotNetManager(Manager):
         if rotate >= 0:
             assert rotate % deg_resolution == 0, "Resolution must be a factor of rotate"
         self.rotate = rotate
+        self.regression = regression
         self.make_grayscale = make_grayscale
         if type(manager) != SampleAugmenter:
             self.manager = manager
@@ -93,7 +95,10 @@ class RotNetManager(Manager):
         thetas = self._get_thetas(index_array)
         # Allocate arrays
         input_tensor = np.zeros((batch_size,) + shape + (self.color_channels,))
-        target_tensor = thetas / self.deg_resolution
+        if self.regression:
+            target_tensor = thetas / 360
+        else:
+            target_tensor = thetas / self.deg_resolution
         n_classes = int(360 / self.deg_resolution)
         # Preprocessor
         if self.make_grayscale:
@@ -107,7 +112,10 @@ class RotNetManager(Manager):
             input_tensor[i] = sample.get_img_arr()[:, :, :self.color_channels]
         if self.preprocessing_function:
             input_tensor = self.preprocessing_function(input_tensor)
-        return input_tensor, to_categorical(target_tensor, n_classes)
+        if self.regression:
+            return input_tensor, np.expand_dims(target_tensor, axis=-1)
+        else:
+            return input_tensor, to_categorical(target_tensor, n_classes)
 
     def write_sample(self, sample: Sample, write_image=False) -> int:
         raise NotImplementedError

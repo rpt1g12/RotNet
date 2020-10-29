@@ -4,8 +4,9 @@ from typing import Dict, Tuple
 import cv2
 import keras.backend as K
 import numpy as np
+import tensorflow as tf
 from Vision import Sample
-from Vision.io_managers import VOC, Manager
+from Vision.io_managers import Manager
 from Vision.models.classification_model import ClassificationModel
 from Vision.utils.parallelisation import parallelize_with_thread_pool
 from keras import Model as _kModel, Input
@@ -18,7 +19,7 @@ from keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout, BatchNor
 from keras.models import load_model
 from keras.optimizers import Optimizer
 
-from utils import REGEX_IMG, angle_difference
+from utils import REGEX_IMG
 from vision_generator import RotNetManager
 
 OUTPUT_FOLDER = 'saved_models'
@@ -42,6 +43,18 @@ def initial_block(filters):
         return x
 
     return f
+
+
+def angle_difference(x, y):
+    """
+    Calculate minimum difference between two angles.
+    """
+    return 180 - abs(abs(x - y) - 180)
+
+
+def softargmax(x, nb_classes, beta=1e10):
+    x_range = tf.range(nb_classes, dtype=x.dtype)
+    return tf.reduce_sum(tf.nn.softmax(x * beta) * x_range, axis=-1)
 
 
 def residual_block(filters, stride, n):
@@ -125,6 +138,7 @@ class RotNet(ClassificationModel):
                  make_grayscale: bool,
                  input_shape: Tuple[int, int],
                  backbone: str,
+                 regression: False,
                  output_folder=OUTPUT_FOLDER):
         super(RotNet, self).__init__()
         # Make sure the output path is available
@@ -140,6 +154,7 @@ class RotNet(ClassificationModel):
         self.input_shape = input_shape
         assert backbone in BACKBONES, "backbone should be one of: \n\t{}".format(BACKBONES)
         self.backbone = backbone
+        self.regression = regression
         self.kmodel = None
         self.train_generator = None
         self.val_generator = None
@@ -147,7 +162,7 @@ class RotNet(ClassificationModel):
     def get_angle_error_function(self):
         factor = self.deg_resolution
 
-        def angle_error(y_true, y_pred):
+        def angle_error_classification(y_true, y_pred):
             """
             Calculate the mean diference between the true angles
             and the predicted angles. Each angle is represented
@@ -156,7 +171,26 @@ class RotNet(ClassificationModel):
             diff = angle_difference(K.argmax(y_true) * factor, K.argmax(y_pred) * factor)
             return K.mean(K.cast(K.abs(diff), K.floatx()))
 
-        return angle_error
+        def classification_loss(y_true, y_pred):
+            soft_true = softargmax(y_true, self.n_classes)
+            soft_pred = softargmax(y_pred, self.n_classes)
+            diff = angle_difference(soft_true, soft_pred)
+            return K.mean(diff)*factor/360
+
+        def regression_loss(y_true, y_pred):
+            """
+            Calculate the mean diference between the true angles
+            and the predicted angles.
+            """
+            return K.mean(angle_difference(y_true * 360, y_pred * 360) / 360)
+
+        def angle_error_regression(y_true, y_pred):
+            return regression_loss(y_true, y_pred) * 360
+
+        if self.regression:
+            return angle_error_regression, regression_loss
+        else:
+            return angle_error_classification, classification_loss
 
     def get_preprocessing_function(self):
         if self.backbone == "resnet50":
@@ -196,7 +230,10 @@ class RotNet(ClassificationModel):
         x = Dropout(0.2)(x)
         x = Dense(256, activation="relu")(x)
         x = Dropout(0.2)(x)
-        output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
+        if self.regression:
+            output_layer = Dense(1, activation="sigmoid", name="rotnet-output")(x)
+        else:
+            output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
 
         model = _kModel(inputs=input_layer, outputs=output_layer)
         return model
@@ -210,26 +247,32 @@ class RotNet(ClassificationModel):
         # append classification layer
         x = base_model.output
         x = Flatten()(x)
-        final_output = Dense(self.n_classes, activation='softmax', name='rotnet-output')(x)
+        if self.regression:
+            output_layer = Dense(1, activation="sigmoid", name="rotnet-output")(x)
+        else:
+            output_layer = Dense(self.n_classes, activation='softmax', name="rotnet-output")(x)
 
         # create the new model
-        model = _kModel(inputs=base_model.input, outputs=final_output)
+        model = _kModel(inputs=base_model.input, outputs=output_layer)
         return model
 
     def compile(self, optimizer: Optimizer = None):
-        angle_error = self.get_angle_error_function()
+        angle_error, loss = self.get_angle_error_function()
         if optimizer is not None:
-            self.kmodel.compile(loss='categorical_crossentropy',
+            self.kmodel.compile(loss=loss,
                                 optimizer=optimizer,
                                 metrics=[angle_error])
         else:
-            self.kmodel.compile(loss='categorical_crossentropy',
+            self.kmodel.compile(loss=loss,
                                 optimizer='adam',
                                 metrics=[angle_error])
 
     def get_callbacks(self):
         # callbacks
-        monitor = "val_angle_error"
+        if self.regression:
+            monitor = "val_angle_error_regression"
+        else:
+            monitor = "val_angle_error_classiffication"
         file_name = "{}-{}".format(self.model_name, self.backbone)
         checkpointer = ModelCheckpoint(
             filepath=os.path.join(OUTPUT_FOLDER, "{}.hdf5".format(file_name)),
@@ -251,6 +294,7 @@ class RotNet(ClassificationModel):
         files = [(os.path.relpath(r, src), f) for r, d, files in os.walk(src) for f in files if REGEX_IMG.match(f)]
         # Sort files by their basename
         files.sort(key=lambda t: t[1])
+        np.random.shuffle(files)
 
         idx0 = 0
         n_samples = len(files)
@@ -284,7 +328,9 @@ class RotNet(ClassificationModel):
             preprocessing_function=self.get_preprocessing_function(),
             make_grayscale=self.make_grayscale,
             fixed=True,
-            n_aug=n_aug
+            n_aug=n_aug,
+            regression=self.regression,
+            shuffle=True
         )
 
         self.val_generator = RotNetManager(
@@ -296,6 +342,7 @@ class RotNet(ClassificationModel):
             make_grayscale=self.make_grayscale,
             fixed=True,
             n_aug=0,
+            regression=self.regression,
             shuffle=False
         )
 
