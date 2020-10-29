@@ -19,6 +19,7 @@ class RotnetPipe(ClassificationPipe):
             deg_resolution=deg_resolution,
             make_grayscale=make_grayscale,
             input_shape=input_shape,
+            regression=False,
             backbone=backbone
         )
         rotnet.load(hdf5)
