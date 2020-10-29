@@ -1,0 +1,55 @@
+<annotation>
+    <folder>{{ folder }}</folder>
+    <filename>{{ filename }}</filename>
+    <path>{{ path }}</path>
+    <source>
+        <database>{{ source['database'] }}</database>
+    </source>
+    <size>
+        <width>{{ size['width'] }}</width>
+        <height>{{ size['height'] }}</height>
+        <depth>{{ size['depth'] }}</depth>
+    </size>
+    <segmented>{{ segmented }}</segmented>
+    <rotation>{{ rotation }}</rotation>
+    {% for ob in objects -%}
+    <object>
+        <name>{{ ob['name'] }}</name>
+        <pose>{{ ob['pose'] }}</pose>
+        <truncated>{{ ob['truncated'] }}</truncated>
+        <occluded>{{ ob['occluded'] }}</occluded>
+        <difficult>{{ ob['difficult'] }}</difficult>
+        {%- if 'confidence' in ob.keys() %}
+        <confidence>{{ ob['confidence'] }}</confidence>
+        {%- endif %}
+        {%- if 'bndbox' in ob.keys() %}
+        <bndbox>
+            <xmin>{{ ob['bndbox']['xmin'] }}</xmin>
+            <ymin>{{ ob['bndbox']['ymin'] }}</ymin>
+            <xmax>{{ ob['bndbox']['xmax'] }}</xmax>
+            <ymax>{{ ob['bndbox']['ymax'] }}</ymax>
+        </bndbox>
+        {%- endif %}
+        {%- if 'polygon' in ob.keys() %}
+        <polygon>
+            {% for p in ob['polygon'] -%}
+            <point>
+                <x>{{ p[0] }}</x>
+                <y>{{ p[1] }}</y>
+            </point>
+            {%- endfor %}
+        </polygon>
+        {%- endif %}
+        {%- if 'levels' in ob.keys() %}
+        <classification>
+            {% for lv in ob['levels'] -%}
+            <level>
+                <name>{{ lv['name'] }}</name>
+                <value>{{ lv['value'] }}</value>
+            </level>
+            {%- endfor %}
+        </classification>
+        {%- endif %}
+    </object>
+    {% endfor %}
+</annotation>
