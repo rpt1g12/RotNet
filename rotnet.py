@@ -6,7 +6,7 @@ import keras.backend as K
 import numpy as np
 import tensorflow as tf
 from keras import Model as _kModel, Input
-from keras.applications import ResNet50
+from keras.applications import ResNet50, MobileNetV2
 from keras.applications.imagenet_utils import preprocess_input as imagenet_pre
 from keras.applications.resnet50 import preprocess_input as resnet_pre
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard
@@ -25,7 +25,7 @@ from vision_generator import RotNetManager
 OUTPUT_FOLDER = 'saved_models'
 SPLIT_NAMES = ["train", "val", "test"]
 
-BACKBONES = ["resnet50", "custom"]
+BACKBONES = ["resnet50", "custom", "mobilenet"]
 
 
 def initial_block(filters, kernel_size):
@@ -188,19 +188,19 @@ class RotNet(ClassificationModel):
         if self.regression:
             return angle_error_regression, regression_loss
         else:
-            return angle_error_classification, classification_loss
+            return angle_error_classification, "categorical_crossentropy"
 
     def get_preprocessing_function(self):
-        if self.backbone == "resnet50":
-            return resnet_pre
-        else:
+        if self.backbone == "custom":
             return imagenet_pre
+        else:
+            return resnet_pre
 
     def build(self):
-        if self.backbone == "resnet50":
-            self.kmodel = self.restnet_build()
-        else:
+        if self.backbone == "custom":
             self.kmodel = self.custom_build()
+        else:
+            self.kmodel = self.restnet_build()
 
     def custom_build(self):
         # Input layer
@@ -239,7 +239,12 @@ class RotNet(ClassificationModel):
     def restnet_build(self) -> _kModel:
         input_shape = self.input_shape + (self.color_channels,)
         # load base model
-        base_model = ResNet50(weights='imagenet', include_top=False,
+        if self.backbone == "resnet50":
+            backboneNet = ResNet50
+        elif self.backbone == "mobilenet":
+            backboneNet = MobileNetV2
+
+        base_model = backboneNet(weights='imagenet', include_top=False,
                               input_shape=input_shape)
 
         # append classification layer
@@ -277,7 +282,7 @@ class RotNet(ClassificationModel):
             monitor=monitor,
             save_best_only=True
         )
-        reduce_lr = ReduceLROnPlateau(monitor="val_loss", patience=3)
+        reduce_lr = ReduceLROnPlateau(monitor="loss", patience=3)
         early_stopping = EarlyStopping(monitor=monitor, patience=10)
         tensorboard = TensorBoard(log_dir=os.path.join("logs", file_name))
 
