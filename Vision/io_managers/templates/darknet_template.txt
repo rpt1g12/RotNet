@@ -1,3 +1,0 @@
-{% for ann in annotations -%}
-{{ ann['cls'] }} {{ ann['x'] }} {{ ann['y'] }} {{ ann['w'] }} {{ ann['h'] }}
-{% endfor %}
