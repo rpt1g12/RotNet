@@ -275,7 +275,7 @@ class RotNet(ClassificationModel):
         if self.regression:
             monitor = "val_angle_error_regression"
         else:
-            monitor = "val_angle_error_classiffication"
+            monitor = "val_angle_error_classification"
         file_name = "{}-{}".format(self.model_name, self.backbone)
         checkpointer = ModelCheckpoint(
             filepath=os.path.join(OUTPUT_FOLDER, "{}.hdf5".format(file_name)),
