@@ -4,7 +4,7 @@ from typing import Tuple
 from Vision.io_managers import Manager
 from Vision.pipelines.classification_pipe import ClassificationPipe
 
-from rotnet import RotNet
+from RotNet.rotnet import RotNet
 
 
 class RotnetPipe(ClassificationPipe):

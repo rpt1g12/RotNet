@@ -19,8 +19,8 @@ from Vision import Sample
 from Vision.io_managers import Manager
 from Vision.models.classification_model import ClassificationModel
 from Vision.utils.parallelisation import parallelize_with_thread_pool
-from utils import REGEX_IMG
-from vision_generator import RotNetManager
+from RotNet.rotnet_utils import REGEX_IMG
+from RotNet.vision_generator import RotNetManager
 
 OUTPUT_FOLDER = 'saved_models'
 SPLIT_NAMES = ["train", "val", "test"]
