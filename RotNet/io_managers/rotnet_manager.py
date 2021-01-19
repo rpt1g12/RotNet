@@ -29,7 +29,8 @@ def random_theta_batch(batch_size, deg_resolution):
 class RotNetManager(Manager):
     """Docstring"""
 
-    def __init__(self, manager: Manager,
+    def __init__(self,
+                 manager: Manager,
                  input_shape: Tuple[int, int],
                  deg_resolution: int = 2,
                  batch_size=32,
@@ -121,7 +122,7 @@ class RotNetManager(Manager):
             return input_tensor, to_categorical(target_tensor, n_classes)
 
     def write_sample(self, sample: Sample, write_image=False) -> int:
-        raise NotImplementedError
+        return self.manager.write_sample(sample, write_image)
 
     def sample_generator(self, batch_size: int = 0) -> Sample_Generator:
         if batch_size > 0:
@@ -129,7 +130,7 @@ class RotNetManager(Manager):
         pass
 
     def write_samples(self, samples: Sample_List, write_image=False) -> int:
-        raise NotImplementedError
+        return self.manager.write_samples(samples, write_image=write_image)
 
     def read_sample(self, n: int) -> Sample:
         # Preprocessor
