@@ -2,9 +2,9 @@ import os
 from datetime import datetime as dt
 
 from Vision.io_managers import ImageManager
-from keras.optimizers import SGD, Adam
+from keras.optimizers import SGD
 
-from rotnet import RotNet
+from RotNet.models.rotnet import RotNet
 
 if __name__ == "__main__":
     today = dt.date(dt.now()).__str__()
