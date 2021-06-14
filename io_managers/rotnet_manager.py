@@ -124,6 +124,9 @@ class RotNetManager(Manager):
     def write_sample(self, sample: Sample, write_image=False) -> int:
         return self.manager.write_sample(sample, write_image)
 
+    def delete_sample(self, n: int) -> int:
+        return self.manager.delete_sample(n)
+
     def sample_generator(self, batch_size: int = 0) -> Sample_Generator:
         if batch_size > 0:
             self.set_batch_size(batch_size)
